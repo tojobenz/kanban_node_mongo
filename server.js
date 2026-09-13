@@ -23,27 +23,30 @@ app.use(express.urlencoded({ extended: true }));
 const db = require("./app/models");
 const Role = db.role;
 
-// Connect to MongoDB only if not already connected
-if (!global.mongooseConnection) {
-  db.mongoose
-    .connect(dbConfig.URI || `mongodb://${dbConfig.HOST}:${dbConfig.PORT}/${dbConfig.DB}`, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    })
-    .then(() => {
+// Middleware pour assurer la connexion MongoDB pour serverless
+app.use(async (req, res, next) => {
+  try {
+    if (!global.mongooseConnection || global.mongooseConnection.readyState !== 1) {
+      await db.mongoose.connect(dbConfig.URI || `mongodb://${dbConfig.HOST}:${dbConfig.PORT}/${dbConfig.DB}`, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000
+      });
       console.log("Successfully connect to MongoDB.");
       global.mongooseConnection = db.mongoose.connection;
-      initial();
-    })
-    .catch(err => {
-      console.error("Connection error", err);
-      if (process.env.NODE_ENV !== 'production') {
-        process.exit();
+      
+      if (!global.rolesInitialized) {
+        await initial();
+        global.rolesInitialized = true;
       }
-    });
-} else {
-  initial();
-}
+    }
+    next();
+  } catch (err) {
+    console.error("Connection error", err);
+    return res.status(500).json({ message: "Database connection error", error: err.message });
+  }
+});
 
 // simple route
 app.get("/", (req, res) => {
@@ -69,28 +72,17 @@ if (require.main === module) {
 // Export for Vercel
 module.exports = app;
 
-function initial() {
-  Role.estimatedDocumentCount((err, count) => {
-    if (!err && count === 0) {
-      new Role({
-        name: "user"
-      }).save(err => {
-        if (err) {
-          console.log("error", err);
-        }
+async function initial() {
+  try {
+    const count = await Role.estimatedDocumentCount();
+    if (count === 0) {
+      await new Role({ name: "user" }).save();
+      console.log("User role créer");
 
-        console.log("User role créer");
-      });
-
-      new Role({
-        name: "admin"
-      }).save(err => {
-        if (err) {
-          console.log("error", err);
-        }
-
-        console.log("Admin role créer");
-      });
+      await new Role({ name: "admin" }).save();
+      console.log("Admin role créer");
     }
-  });
+  } catch (err) {
+    console.log("error", err);
+  }
 }
