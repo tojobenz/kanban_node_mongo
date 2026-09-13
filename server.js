@@ -20,19 +20,27 @@ app.use(express.urlencoded({ extended: true }));
 const db = require("./app/models");
 const Role = db.role;
 
-db.mongoose
-  .connect(dbConfig.URI || `mongodb://${dbConfig.HOST}:${dbConfig.PORT}/${dbConfig.DB}`, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  })
-  .then(() => {
-    console.log("Successfully connect to MongoDB.");
-    initial();
-  })
-  .catch(err => {
-    console.error("Connection error", err);
-    process.exit();
-  });
+// Connect to MongoDB only if not already connected
+if (!global.mongooseConnection) {
+  db.mongoose
+    .connect(dbConfig.URI || `mongodb://${dbConfig.HOST}:${dbConfig.PORT}/${dbConfig.DB}`, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    })
+    .then(() => {
+      console.log("Successfully connect to MongoDB.");
+      global.mongooseConnection = db.mongoose.connection;
+      initial();
+    })
+    .catch(err => {
+      console.error("Connection error", err);
+      if (process.env.NODE_ENV !== 'production') {
+        process.exit();
+      }
+    });
+} else {
+  initial();
+}
 
 // simple route
 app.get("/", (req, res) => {
@@ -46,11 +54,17 @@ require("./app/routes/tache.routes")(app);
 require("./app/routes/card.routes")(app);
 require("./app/routes/historic.routes")(app);
 require("./app/routes/kanban.routes")(app);
-// set port, listen for requests
-const PORT = process.env.PORT || 8082;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}.`);
-});
+
+// For local development
+if (require.main === module) {
+  const PORT = process.env.PORT || 8082;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}.`);
+  });
+}
+
+// Export for Vercel
+module.exports = app;
 
 function initial() {
   Role.estimatedDocumentCount((err, count) => {
