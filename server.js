@@ -6,7 +6,10 @@ const dbConfig = require("./app/config/db.config");
 const app = express();
 
 var corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:8081"
+  origin: process.env.FRONTEND_URL || 
+    (process.env.NODE_ENV === 'production' 
+      ? 'https://kanban-vue-front.vercel.app' 
+      : 'http://localhost:8081')
 };
 
 app.use(cors(corsOptions));
